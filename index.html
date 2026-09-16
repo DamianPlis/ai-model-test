@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      // Apply before paint; dark is the default until a preference is saved.
+      try {
+        document.documentElement.classList.toggle('dark', localStorage.getItem('local-lab-theme') !== 'light');
+      } catch {
+        document.documentElement.classList.add('dark');
+      }
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f7f8fa" />
+    <meta name="description" content="A local AI playground. Chat with language models in your browser and inspect every run." />
+    <title>Local Lab — On-device AI playground</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
+</html>
