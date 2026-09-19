@@ -41,6 +41,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { LoadProgress } from "@/components/load-progress";
+import { DownloadManager } from "@/components/download-manager";
 import {
   Sheet,
   SheetContent,
@@ -408,6 +409,7 @@ export default function App() {
   const p = usePlayground();
   const [draft, setDraft] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [downloadsOpen, setDownloadsOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [desktopInspector, setDesktopInspector] = useState(true);
@@ -494,6 +496,9 @@ export default function App() {
               </Badge>
             </div>
             <div className="topbar-actions">
+              <Button variant="ghost" size="sm" className="downloads-trigger" onClick={() => setDownloadsOpen(true)} aria-label="Open download manager">
+                <Download size={16} /><span>Downloads</span>{p.download?.status === "downloading" && <span className="status-dot pulsing" />}
+              </Button>
               <TipButton label={dark ? "Switch to light mode" : "Switch to dark mode"} onClick={toggleTheme}>
                 {dark ? <Sun /> : <Moon />}
               </TipButton>
@@ -766,7 +771,10 @@ export default function App() {
               </Button>
             )}
             {p.phase === "loading" && (
-              <LoadProgress value={p.progress} compact />
+              <div>
+                <button className="download-quick-link" onClick={() => setDownloadsOpen(true)}><Download size={13} />View files & download speed<ArrowRight size={13} /></button>
+                <LoadProgress value={p.progress} compact />
+              </div>
             )}
             <form
               className={cn("composer", generating && "is-generating")}
@@ -920,6 +928,7 @@ export default function App() {
           </Sheet>
         )}
         <ModelPicker p={p} open={pickerOpen} setOpen={setPickerOpen} />
+        <DownloadManager p={p} open={downloadsOpen} onOpenChange={setDownloadsOpen} />
       </div>
     </TooltipProvider>
   );

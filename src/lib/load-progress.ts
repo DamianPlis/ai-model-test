@@ -1,3 +1,5 @@
+import type { DownloadDetails } from "./model-download";
+
 export type LoadStage = "prepare" | "download" | "upload" | "compile" | "ready";
 export type LoadReport = {
   stage: LoadStage;
@@ -6,6 +8,7 @@ export type LoadReport = {
   timeElapsed: number;
   loadedBytes?: number;
   totalBytes?: number;
+  download?: DownloadDetails;
 };
 export type LoadSnapshot = {
   progress: number;
@@ -101,8 +104,8 @@ export class LoadProgressTracker {
       progress: this.shown / 100, stage: this.stage, text: this.report.text,
       elapsedMs, remainingMs, totalMs, finishAt: totalMs == null ? undefined : this.wallStart + totalMs,
       loadedBytes: this.report.loadedBytes, totalBytes: this.report.totalBytes,
-      bytesPerSecond: this.stage === "download" && rate > 0 && this.report.totalBytes
-        ? rate * this.report.totalBytes * 1000 : undefined,
+      bytesPerSecond: this.stage === "download" ? this.report.download?.bytesPerSecond ??
+        (stalled ? 0 : rate > 0 && this.report.totalBytes ? rate * this.report.totalBytes * 1000 : undefined) : undefined,
       stalled,
     };
   }

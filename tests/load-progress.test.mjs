@@ -9,7 +9,7 @@ async function importTS(path) {
   return import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 }
 const { LoadProgressTracker, formatDuration } = await importTS("../src/lib/load-progress.ts");
-const { downloadModel } = await importTS("../src/lib/model-download.ts");
+const { downloadModel, DownloadRate } = await importTS("../src/lib/model-download.ts");
 const report = (stage, progress, extra = {}) => ({ stage, progress, text: stage, timeElapsed: 0, ...extra });
 
 test("walks every percentage point, never regresses, and reserves 100 for readiness", () => {
@@ -102,7 +102,15 @@ test("measures chunks across concurrent downloads and reuses cache", async (t) =
   assert.ok(reports.some((value) => value.loadedBytes > 0 && value.loadedBytes < 100));
   assert.equal(reports.at(-1).loadedBytes, 200);
   assert.equal(reports.at(-1).progress, 1);
-  await downloadModel("https://example.test/model", () => assert.fail("Cached weights must not download"));
+  assert.deepEqual(reports.at(-1).download.files.map((file) => file.status), ["complete", "complete"]);
+  assert.equal(reports.at(-1).download.complete, true);
+  assert.equal(reports[0].download.files[0].loadedBytes, 0, "Earlier snapshots must not mutate");
+  const cachedReports = [];
+  await downloadModel("https://example.test/model", (value) => cachedReports.push(value));
+  assert.equal(cachedReports.at(-1).download.totalBytes, 0);
+  assert.equal(cachedReports.at(-1).download.cachedBytes, 200);
+  assert.equal(cachedReports.at(-1).download.bytesPerSecond, 0);
+  assert.deepEqual(cachedReports.at(-1).download.files.map((file) => file.status), ["cached", "cached"]);
   assert.equal(requested.length, 2);
 });
 
@@ -113,6 +121,8 @@ test("partial cache counts only remaining network bytes", async (t) => {
   assert.equal(requested.length, 1);
   assert.ok(requested[0].endsWith("b.bin"));
   assert.equal(reports.at(-1).totalBytes, 100);
+  assert.equal(reports.at(-1).download.cachedBytes, 100);
+  assert.deepEqual(reports.at(-1).download.files.map((file) => file.status), ["cached", "complete"]);
 });
 
 test("truncated and failed responses never enter the weight cache", async (t) => {
@@ -123,6 +133,19 @@ test("truncated and failed responses never enter the weight cache", async (t) =>
 
 test("HTTP failures reject loading", async (t) => {
   const { stored } = mockDownload(t, { httpError: true });
-  await assert.rejects(downloadModel("https://example.test/model", () => {}), /503/);
+  const reports = [];
+  await assert.rejects(downloadModel("https://example.test/model", (value) => reports.push(value)), /503/);
+  assert.equal(reports.at(-1).download.complete, false);
+  assert.ok(reports.at(-1).download.files.some((file) => file.status === "error"));
   assert.equal(stored.size, 1);
+});
+
+test("rolling throughput falls to zero while stalled and recovers", () => {
+  const rate = new DownloadRate(0);
+  assert.equal(rate.measure(100, 100000), 0);
+  assert.equal(rate.measure(1000, 1000000), 1000000);
+  assert.equal(rate.measure(2000, 2000000), 1000000);
+  for (let time = 2250; time <= 7000; time += 250) rate.measure(time, 2000000);
+  assert.equal(rate.measure(7250, 2000000), 0);
+  assert.ok(rate.measure(7500, 3000000) > 0);
 });

@@ -1,6 +1,5 @@
 import { Progress } from "@/components/ui/progress";
 import { formatDuration, type LoadSnapshot } from "@/lib/load-progress";
-import { formatBytes } from "@/lib/types";
 
 export function LoadProgress({ value, compact = false }: { value: LoadSnapshot; compact?: boolean }) {
   const percent = Math.round(value.progress * 100);
@@ -20,8 +19,8 @@ export function LoadProgress({ value, compact = false }: { value: LoadSnapshot; 
         <div><dt>{done ? "Finished at" : "Expected finish"}</dt><dd>{value.finishAt == null ? "Estimating…" : new Date(value.finishAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</dd></div>
       </dl>
       {value.totalBytes != null && (
-        <p className="load-transfer">{formatBytes(value.loadedBytes)} / {formatBytes(value.totalBytes)}
-          {value.bytesPerSecond != null && <> · {formatBytes(value.bytesPerSecond)}/s</>}
+        <p className="load-transfer">{((value.loadedBytes ?? 0) / 1e6).toFixed(2)} MB / {(value.totalBytes / 1e6).toFixed(2)} MB
+          {value.bytesPerSecond != null && <> · {(value.bytesPerSecond / 1e6).toFixed(2)} MB/s · {(value.bytesPerSecond * 8 / 1e6).toFixed(2)} Mbps</>}
         </p>
       )}
       <p className="load-estimate-note">{done ? "Model loaded and ready to use." : value.stalled ? "Waiting for loading activity. Timing will update when progress resumes." : "Overall progress and timing are estimates based on loading activity."}</p>

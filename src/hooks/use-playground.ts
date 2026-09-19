@@ -21,6 +21,7 @@ import {
 } from "@/lib/types";
 import { inspectHardware, refreshMemory } from "@/lib/hardware";
 import { LoadProgressTracker, readLoadHistory, type LoadReport } from "@/lib/load-progress";
+import type { DownloadJob } from "@/lib/model-download";
 
 export const models = prebuiltAppConfig.model_list.filter(
   (model) => !/embed|snowflake|bge-/i.test(model.model_id),
@@ -56,6 +57,7 @@ export function usePlayground() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [download, setDownload] = useState<DownloadJob | null>(null);
   const loadTracker = useRef(new LoadProgressTracker(0, 0, false));
   const [progress, setProgress] = useState(() => loadTracker.current.snapshot(0));
   const [loadMs, setLoadMs] = useState<number>();
@@ -175,6 +177,7 @@ export function usePlayground() {
     setActiveContext(undefined);
   };
   const cancelLoad = () => {
+    setDownload((job) => job && job.status !== "complete" ? { ...job, status: "cancelled" } : job);
     operation.current++;
     abortLoad.current?.();
     abortLoad.current = null;
@@ -188,7 +191,7 @@ export function usePlayground() {
       "Loading cancelled; worker terminated. Previously cached files are retained.",
     );
   };
-  const load = async () => {
+  const load = async (modelId = selectedModel) => {
     if (busy.current) return;
     if (!hardware.webgpu) {
       setError(hardware.error ?? "WebGPU is not available in this browser.");
@@ -199,15 +202,16 @@ export function usePlayground() {
     dispose();
     setError(null);
     setPhase("loading");
+    setDownload({ model: modelId, status: "preparing" });
     setLoadMs(undefined);
     setElapsed(0);
     started.current = performance.now();
-    const historyKey = `local-lab-load-v1:${selectedModel}:${settings.context}:${cached === true ? "cached" : "download"}`;
+    const historyKey = `local-lab-load-v1:${modelId}:${settings.context}:${cached === true && modelId === selectedModel ? "cached" : "download"}`;
     loadTracker.current = new LoadProgressTracker(started.current, Date.now(), cached === true, readLoadHistory(historyKey));
     setProgress(loadTracker.current.snapshot(started.current));
     log(
       "info",
-      `Loading ${selectedModel}; context ${settings.context}; worker backend.`,
+      `Loading ${modelId}; context ${settings.context}; worker backend.`,
     );
     try {
       const nextWorker = new Worker(
@@ -224,12 +228,14 @@ export function usePlayground() {
         initProgressCallback: (report) => {
           if (ticket === operation.current && "stage" in report) {
             loadTracker.current.update(report as LoadReport, performance.now());
+            const details = (report as LoadReport).download;
+            if (details) setDownload({ model: modelId, status: details.complete ? "complete" : "downloading", details });
           }
         },
       });
       engine.current = nextEngine;
       await Promise.race([
-        nextEngine.reload(selectedModel, {
+        nextEngine.reload(modelId, {
           context_window_size: settings.context,
         }),
         cancelled,
@@ -245,7 +251,7 @@ export function usePlayground() {
         localStorage.setItem(historyKey, JSON.stringify(timings));
       } catch { /* Estimates work without persisted history. */ }
       setLoadMs(duration);
-      setActiveModel(selectedModel);
+      setActiveModel(modelId);
       setActiveContext(settings.context);
       setPhase("ready");
       nextWorker.onerror = (event) => {
@@ -269,6 +275,7 @@ export function usePlayground() {
       const message = messageOf(cause);
       setError(message);
       log("error", `Model load failed: ${message}`);
+      setDownload((job) => job && job.status !== "complete" ? { ...job, status: "error", error: message } : job);
       dispose();
       setPhase("error");
     } finally {
@@ -555,6 +562,7 @@ export function usePlayground() {
     error,
     setError,
     progress,
+    download,
     loadMs,
     activeContext,
     cached,
