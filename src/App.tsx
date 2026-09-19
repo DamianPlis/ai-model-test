@@ -40,7 +40,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Progress } from "@/components/ui/progress";
+import { LoadProgress } from "@/components/load-progress";
 import {
   Sheet,
   SheetContent,
@@ -306,14 +306,7 @@ function Sidebar({
               <X size={16} />
               Cancel loading
             </Button>
-            <Progress
-              value={p.progress.progress * 100}
-              className="mt-3 h-1.5"
-            />
-            <div className="loading-caption">
-              <span>{Math.round(p.progress.progress * 100)}%</span>
-              <span>{formatTime(p.elapsed)}</span>
-            </div>
+            <LoadProgress value={p.progress} />
           </>
         ) : (
           <Button
@@ -337,6 +330,7 @@ function Sidebar({
             Unload from memory
           </Button>
         )}
+        {loaded && p.progress.stage === "ready" && <LoadProgress value={p.progress} />}
         <p className="model-explainer">
           Model files download to your browser. Your messages stay on your
           device.
@@ -772,11 +766,7 @@ export default function App() {
               </Button>
             )}
             {p.phase === "loading" && (
-              <div className="inline-progress">
-                <LoaderCircle size={14} className="animate-spin" />
-                <span title={p.progress.text}>{p.progress.text}</span>
-                <strong>{Math.round(p.progress.progress * 100)}%</strong>
-              </div>
+              <LoadProgress value={p.progress} compact />
             )}
             <form
               className={cn("composer", generating && "is-generating")}

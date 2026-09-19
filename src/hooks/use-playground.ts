@@ -20,6 +20,7 @@ import {
   type Settings,
 } from "@/lib/types";
 import { inspectHardware, refreshMemory } from "@/lib/hardware";
+import { LoadProgressTracker, readLoadHistory, type LoadReport } from "@/lib/load-progress";
 
 export const models = prebuiltAppConfig.model_list.filter(
   (model) => !/embed|snowflake|bge-/i.test(model.model_id),
@@ -55,11 +56,8 @@ export function usePlayground() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState({
-    progress: 0,
-    text: "",
-    timeElapsed: 0,
-  });
+  const loadTracker = useRef(new LoadProgressTracker(0, 0, false));
+  const [progress, setProgress] = useState(() => loadTracker.current.snapshot(0));
   const [loadMs, setLoadMs] = useState<number>();
   const [activeContext, setActiveContext] = useState<number>();
   const [cached, setCached] = useState<boolean | undefined>();
@@ -162,6 +160,11 @@ export function usePlayground() {
     );
     return () => clearInterval(interval);
   }, [phase]);
+  useEffect(() => {
+    if (phase !== "loading") return;
+    const timer = setInterval(() => setProgress(loadTracker.current.snapshot(performance.now())), 32);
+    return () => clearInterval(timer);
+  }, [phase]);
 
   const refreshHardware = async () => setHardware(await inspectHardware());
   const dispose = () => {
@@ -178,7 +181,8 @@ export function usePlayground() {
     dispose();
     busy.current = false;
     setPhase("idle");
-    setProgress({ progress: 0, text: "", timeElapsed: 0 });
+    loadTracker.current = new LoadProgressTracker(0, 0, false);
+    setProgress(loadTracker.current.snapshot(0));
     log(
       "warn",
       "Loading cancelled; worker terminated. Previously cached files are retained.",
@@ -198,11 +202,9 @@ export function usePlayground() {
     setLoadMs(undefined);
     setElapsed(0);
     started.current = performance.now();
-    setProgress({
-      progress: 0,
-      text: "Starting worker and checking model files…",
-      timeElapsed: 0,
-    });
+    const historyKey = `local-lab-load-v1:${selectedModel}:${settings.context}:${cached === true ? "cached" : "download"}`;
+    loadTracker.current = new LoadProgressTracker(started.current, Date.now(), cached === true, readLoadHistory(historyKey));
+    setProgress(loadTracker.current.snapshot(started.current));
     log(
       "info",
       `Loading ${selectedModel}; context ${settings.context}; worker backend.`,
@@ -220,7 +222,9 @@ export function usePlayground() {
       });
       const nextEngine = new WebWorkerMLCEngine(nextWorker, {
         initProgressCallback: (report) => {
-          if (ticket === operation.current) setProgress(report);
+          if (ticket === operation.current && "stage" in report) {
+            loadTracker.current.update(report as LoadReport, performance.now());
+          }
         },
       });
       engine.current = nextEngine;
@@ -232,6 +236,14 @@ export function usePlayground() {
       ]);
       if (ticket !== operation.current) return;
       const duration = performance.now() - started.current;
+      loadTracker.current.update({ stage: "ready", progress: 1, text: "Model ready", timeElapsed: duration / 1000 }, performance.now());
+      setProgress(loadTracker.current.snapshot(performance.now()));
+      try {
+        const previous = readLoadHistory(historyKey);
+        const timings = Object.fromEntries(Object.entries(loadTracker.current.timings()).map(([stage, ms]) =>
+          [stage, previous[stage as keyof typeof previous] == null ? ms : 0.65 * ms + 0.35 * previous[stage as keyof typeof previous]!]));
+        localStorage.setItem(historyKey, JSON.stringify(timings));
+      } catch { /* Estimates work without persisted history. */ }
       setLoadMs(duration);
       setActiveModel(selectedModel);
       setActiveContext(settings.context);
